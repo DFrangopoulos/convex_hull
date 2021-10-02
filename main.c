@@ -8,6 +8,7 @@
 
 
 #define MAX_LINE_BUFFER 150
+#define _USE_MATH_DEFINES
 
 //Point "Object"
 typedef struct point{
@@ -35,8 +36,9 @@ typedef struct stack_item{
 
 //STACK Prototypes
 stack_item *new_item(item_ptr data, stack_item *lower_item);
-stack_item *push(item_ptr data,stack_item *stack);
+void push(item_ptr data,stack_item **stack);
 item_ptr pop(stack_item **stack);
+uint8_t stack_transfer(stack_item **src_stack,stack_item **dst_stack);
 
 //MATH Prototypes
 stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx);
@@ -285,7 +287,7 @@ plot_range_s get_range(point_s *all_points,uint32_t point_num){
 }
 
 //----START STACK FUNCS
-//creates a new item on the stack
+//creates a new stack item
 stack_item *new_item(item_ptr data, stack_item *lower_item ){
 
     stack_item *new = (stack_item *)malloc(sizeof(stack_item));
@@ -299,11 +301,11 @@ stack_item *new_item(item_ptr data, stack_item *lower_item ){
 }
 
 //push item to the stack
-stack_item *push(item_ptr data,stack_item *stack){
+void push(item_ptr data,stack_item **stack){
 
-    return new_item(data,stack);
+    *stack = new_item(data,*stack);
+    return;
 }
-
 //pop item from the stack
 item_ptr pop(stack_item **stack){
 
@@ -323,6 +325,18 @@ item_ptr pop(stack_item **stack){
     }
     return output;
 }
+
+//transfer item from one stack to another
+uint8_t stack_transfer(stack_item **src_stack,stack_item **dst_stack){
+    item_ptr temp = NULL;
+    temp = pop(src_stack);
+    if(temp==NULL){
+        return 1;
+    }
+    push(temp,dst_stack);
+    return 0;
+}
+
 //----END STACK FUNCS
 
 //----START MATH FUNCS
@@ -346,7 +360,7 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
 
         if(i!=low_leftmost_idx){
             //printf("pushed:[%g,%g]\n",all_points[i].x,all_points[i].y);
-            initial_stack = push(&all_points[i],initial_stack);
+            push(&all_points[i],&initial_stack);
         }
     }
 
@@ -354,90 +368,100 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
     stack_item *stack1 = NULL;
     stack_item *stack2 = NULL;
 
-    item_ptr eval,transfer = NULL;
+    //point being evaluated
+    item_ptr eval = NULL;
     while(true){
         //Pop_item from the initial_stack
         eval = pop(&initial_stack);
-        transfer = NULL;
-        double mag1,mag2 = 0;
+        double eval_mag,top_stack_mag;
         if(eval!=NULL){
-            //Get the angle
+            //Get the angle wtr to p0
             eval->angle_to_p0 = get_angle(eval->x-all_points[low_leftmost_idx].x,eval->y-all_points[low_leftmost_idx].y);
             //Compare to angle at the top of stack1
             while(true){
                 //if the stack is not empty
                 if(stack1!=NULL){
-                    //if eval's angle is larger than the top of stack1 pop it and push it on stack2 and repeat with next
+                    //if eval's angle is larger than the top of stack1 
+                    //pop the top of stack1 and push it onto stack2
                     if(eval->angle_to_p0 > stack1->data->angle_to_p0){
-                        stack2 = push(pop(&stack1),stack2);
+                        if(stack_transfer(&stack1,&stack2)){
+                            exit(1);
+                        }
                     //if it's equal compare magnitudes (collinear vectors)
                     }else if(eval->angle_to_p0 == stack1->data->angle_to_p0){
-                        mag1 = get_magnitude(eval->x-all_points[low_leftmost_idx].x,eval->y-all_points[low_leftmost_idx].y);
-                        mag2 = get_magnitude(stack1->data->x-all_points[low_leftmost_idx].x,stack1->data->y-all_points[low_leftmost_idx].y);
 
-                        printf("[%g,%g] mag:%g angle:%g\n",eval->x,eval->y,mag1,eval->angle_to_p0);
-                        printf("[%g,%g] mag:%g angle:%g\n",stack1->data->x,stack1->data->y,mag2,stack1->data->angle_to_p0);
+                        eval_mag = get_magnitude(eval->x-all_points[low_leftmost_idx].x,eval->y-all_points[low_leftmost_idx].y);
+                        top_stack_mag = get_magnitude(stack1->data->x-all_points[low_leftmost_idx].x,stack1->data->y-all_points[low_leftmost_idx].y);
+
+                        //printf("[%g,%g] mag:%g angle:%g\n",eval->x,eval->y,eval_mag,eval->angle_to_p0);
+                        //printf("[%g,%g] mag:%g angle:%g\n",stack1->data->x,stack1->data->y,top_stack_mag,stack1->data->angle_to_p0);
+                        //less than 90 degress (Q1) largest magnitude goes onto the stack first
                         if((*eval).angle_to_p0 < M_PI_2){
-                            //largest magnitude goes first onto stack1
-                            if(mag1 < mag2){
-                                //pop the top of stack1 onto stack2
-                                transfer = pop(&stack1);
-                                stack2 = push(transfer,stack2);
+                            //if eval's angle is smaller 
+                            if(eval_mag < top_stack_mag){
+                                //push eval onto stack1
+                                push(eval,&stack1);
                             }
                             else{
+                                //push top of stack1 onto stack2
+                                if(stack_transfer(&stack1,&stack2)){
+                                    exit(1);
+                                }
                                 //push eval onto stack 1 and add everything from stack 2 on top of it
-                                stack1 = push(eval,stack1);
+                                push(eval,&stack1);
+                                //push all items from stack2 onto stack1
                                 while(true){
-                                    transfer = pop(&stack2);
-                                    if(transfer==NULL){
-                                        //stack2 is now empty
+                                    if(stack_transfer(&stack2,&stack1)){
+                                        //stack2 is empty
                                         break;
                                     }
-                                    stack1 = push(transfer,stack1);
                                 }
-                                //exit loop item has been placed
+                                //move to next item on initial_stack
                                 break;
                             }
                         }else{
-                            //smallest magnitude goes first onto stack1
-                            if(mag1 < mag2){
+                            //more than 90 degress (Q2) smallest magnitude goes onto the stack first
+                            if(eval_mag < top_stack_mag){
+                                //push top of stack1 onto stack2
+                                if(stack_transfer(&stack1,&stack2)){
+                                    exit(1);
+                                }
                                 //push eval onto stack 1 and add everything from stack 2 on top of it
-                                stack1 = push(eval,stack1);
+                                push(eval,&stack1);
+                                //push all items from stack2 onto stack1
                                 while(true){
-                                    transfer = pop(&stack2);
-                                    if(transfer==NULL){
-                                        //stack2 is now empty
+                                    if(stack_transfer(&stack2,&stack1)){
+                                        //stack2 is empty
                                         break;
                                     }
-                                    stack1 = push(transfer,stack1);
                                 }
-                                //exit loop item has been placed
+                                //move to next item on initial_stack
                                 break;
                             }else{
-                                //pop the top of stack1 onto stack2
-                                transfer = pop(&stack1);
-                                stack2 = push(transfer,stack2);
+                                //push eval onto stack1
+                                push(eval,&stack1);
                             }
                         }
 
 
                     //push eval onto stack 1 and add everything from stack 2 on top of it
                     }else{
-                        stack1 = push(eval,stack1);
+                        //if eval's angle is smaller push it onto stack1
+                        push(eval,&stack1);
+                        //push all items from stack2 onto stack1
                         while(true){
-                            transfer = pop(&stack2);
-                            if(transfer==NULL){
-                                //stack2 is now empty
+                            if(stack_transfer(&stack2,&stack1)){
+                                //stack2 is empty
                                 break;
                             }
-                            stack1 = push(transfer,stack1);
                         }
-                        //exit loop item has been placed
+                        //move to next item on initial_stack
                         break;
                     }
                 }else{
                     //just push it onto stack 1 it's the first element
-                    stack1 = push(eval,stack1);
+                    push(eval,&stack1);
+                    //move to next item on initial_stack
                     break;
                 }
             }

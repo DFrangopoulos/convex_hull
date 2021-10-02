@@ -16,7 +16,7 @@ typedef struct stack_item{
 
 }stack_item; 
 
-//creates a new item on the stack
+//creates a new stack item
 stack_item *new_item(item_ptr data, stack_item *lower_item ){
 
     stack_item *new = (stack_item *)malloc(sizeof(stack_item));
@@ -30,9 +30,10 @@ stack_item *new_item(item_ptr data, stack_item *lower_item ){
 }
 
 //push item to the stack
-stack_item *push(item_ptr data,stack_item *stack){
+void push(item_ptr data,stack_item **stack){
 
-    return new_item(data,stack);
+    *stack = new_item(data,*stack);
+    return;
 }
 
 //pop item from the stack
@@ -55,66 +56,37 @@ item_ptr pop(stack_item **stack){
     return output;
 }
 
+uint8_t stack_transfer(stack_item **src_stack,stack_item **dst_stack){
+    item_ptr temp = NULL;
+    temp = pop(src_stack);
+    if(temp==NULL){
+        return 1;
+    }
+    push(temp,dst_stack);
+    return 0;
+}
+
 
 int main (){
 
-    stack_item *stack = NULL;
+    stack_item *stack1 = NULL;
+    stack_item *stack2 = NULL;
+
     uint8_t a = 10;
-    stack = push(&a,stack);
     uint8_t b = 37;
-    stack = push(&b,stack);
     uint8_t e = 26;
-    stack = push(&e,stack);
     uint8_t d = 72;
-    stack = push(&d,stack);
 
-    printf("Top: %d\n",*(stack->data));
+    push(&a,&stack1);
+    push(&b,&stack1);
+    push(&d,&stack2);
 
-    uint8_t *c = pop(&stack);
-    if(c==NULL){
-        printf("Nothing to pop!\n");
-    }else{
-        printf("popped :%d\n",*c);
-    }
+    stack_transfer(&stack1,&stack2);
 
-    c = pop(&stack);
-    if(c==NULL){
-        printf("Nothing to pop!\n");
-    }else{
-        printf("popped :%d\n",*c);
-    }
+    printf("Top S1: %d\n",*(stack1->data));
+    printf("Top S2: %d\n",*(stack2->data));
 
-    c = pop(&stack);
-    if(c==NULL){
-        printf("Nothing to pop!\n");
-    }else{
-        printf("popped :%d\n",*c);
-    }
-
-    c = pop(&stack);
-    if(c==NULL){
-        printf("Nothing to pop!\n");
-    }else{
-        printf("popped :%d\n",*c);
-    }
-
-
-    uint8_t f = 11;
-    stack = push(&f,stack);
-
-    c = pop(&stack);
-    if(c==NULL){
-        printf("Nothing to pop!\n");
-    }else{
-        printf("popped :%d\n",*c);
-    }
-
-     c = pop(&stack);
-    if(c==NULL){
-        printf("Nothing to pop!\n");
-    }else{
-        printf("popped :%d\n",*c);
-    }
+  
 
 
 
