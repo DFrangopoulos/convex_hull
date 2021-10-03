@@ -6,9 +6,7 @@
 #include<string.h>
 #include<math.h>
 
-
 #define MAX_LINE_BUFFER 150
-#define _USE_MATH_DEFINES
 
 //Point "Object"
 typedef struct point{
@@ -16,6 +14,9 @@ typedef struct point{
     double y;
     double angle_wrt_p0;
 }point_s;
+
+//typedef the item ptr type in order to make the stack quicker to reuse in different programs
+typedef point_s *item_ptr;
 
 //Gnuplot Window Ranges
 typedef struct plot_ranges{
@@ -25,39 +26,31 @@ typedef struct plot_ranges{
     double y_max;
 }plot_range_s;
 
-//typedef the item ptr type in order to make the stack quicker to reuse in different programs
-typedef point_s *item_ptr;
-
 //stack item type that points to the data and that points to the previous item on the stack
 typedef struct stack_item{
     item_ptr data;
     struct stack_item *lower_item;
 }stack_item; 
 
-//STACK Prototypes
+FILE *open_randsrc();
+double random_double(FILE *src);
+uint32_t random_int(FILE *src);
+void genpoints_to_file(char *fileout, uint32_t point_num);
+uint8_t read_point_s_file(char *filename,uint32_t point_num, point_s *all_points);
+
+uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num);
+plot_range_s get_range(point_s *all_points,uint32_t point_num);
+
 stack_item *new_item(item_ptr data, stack_item *lower_item);
 void push(item_ptr data,stack_item **stack);
 item_ptr pop(stack_item **stack);
 uint8_t stack_transfer(stack_item **src_stack,stack_item **dst_stack);
 void dump_stack(stack_item **stack);
 
-//MATH Prototypes
-
-double get_magnitude(double x1, double y1, double p0x, double p0y);
 double get_angle(double x1, double y1, double p0x, double p0y);
-
-
-void genpoints_to_file(char *fileout, uint32_t point_num);
-uint8_t read_point_s_file(char *filename,uint32_t point_num, point_s *all_points);
-uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num);
-plot_range_s get_range(point_s *all_points,uint32_t point_num);
-
-FILE *open_randsrc();
-double random_double(FILE *src);
-uint32_t random_int(FILE *src);
-
-
+double get_magnitude(double x1, double y1, double p0x, double p0y);
 stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx);
+
 
 //arg1 -> filename
 //arg2 -> point_num
@@ -98,25 +91,11 @@ int main(int argc , char **argv){
     uint32_t low_leftmost_idx = lowest_point_idx(all_points, point_num);
     plot_range_s range = get_range(all_points,point_num);
 
-    //polar_order(all_points,point_num,low_leftmost_idx);
+    
 
     stack_item *sorted = polar_order(all_points,point_num,low_leftmost_idx);
 
     dump_stack(&sorted);
-
-    //TEST Pop all//
-
-    //item_ptr output = NULL;
-    //while(true){
-
-    //    output = pop(&sorted);
-    //    if(output==NULL){
-    //        break;
-    //    }
-    //    printf("[%g,%g] theta=%g\n",output->x,output->y,output->angle_to_p0);
-
-    //}
-
 
     //Open a pipe to gnuplot
     FILE *gnuplot = popen("gnuplot --persist", "w");
@@ -169,91 +148,75 @@ int main(int argc , char **argv){
     return 0;
 }
 
-uint8_t read_point_s_file(char *filename,uint32_t point_num, point_s *all_points){
+//open /dev/urandom as a source
+FILE *open_randsrc(){
+    return fopen("/dev/urandom","r");
+}
+//compute a random double
+double random_double(FILE *src){
+    return (((double)random_int(src)/(double)0xFFFFFFFF) * (double)5.0) - (double)2.5;
+}
+//return a random int using a randomness source
+uint32_t random_int(FILE *src){
+    if(src==NULL)
+        return 0;
+    uint32_t rdn;
+    fread(&rdn,sizeof(rdn),1,src);
+    return rdn;
+}
+//Generate random points and write them to a file
+void genpoints_to_file(char *fileout, uint32_t point_num){
+    FILE *src, *output;
+    src = open_randsrc();
+    output = fopen(fileout,"w");
+    if(src==NULL || output==NULL)
+        exit(1);
 
+    for(uint32_t i=0; i<point_num;i++){
+        fprintf(output,"%g %g\n",random_double(src),random_double(src));
+    }
+    fclose(src);
+    fclose(output);
+    return;
+}
+//Read a file containing points
+uint8_t read_point_s_file(char *filename,uint32_t point_num, point_s *all_points){
     FILE *input;
     input = fopen(filename,"r");
-    if(input==NULL){
+    if(input==NULL)
         return 1;
-    }
-
     char x_buffer[MAX_LINE_BUFFER];
     char y_buffer[MAX_LINE_BUFFER];
-
     for(uint32_t i=0; i<point_num;i++){
         for(uint8_t j=0;j<MAX_LINE_BUFFER;j++){
             x_buffer[j]=getc(input);
-            if(x_buffer[j]==EOF){exit(1);}
+            if(x_buffer[j]==EOF)
+                exit(1);
             if(x_buffer[j]==0x20){
                 x_buffer[j]=0x00;
                 break;
             }
         }
-
         for(uint8_t k=0;k<MAX_LINE_BUFFER;k++){
             y_buffer[k]=getc(input);
-            if(y_buffer[k]==EOF){exit(1);}
+            if(y_buffer[k]==EOF)
+                exit(1);
             if(y_buffer[k]==0x0a){
                 y_buffer[k]=0x00;
                 break;
             }
         }
-
         all_points[i].x = atof(x_buffer);
         all_points[i].y = atof(y_buffer);
     }
-
     fclose(input);
     return 0;
 }
 
-void genpoints_to_file(char *fileout, uint32_t point_num){
-
-    FILE *src, *output;
-
-    src = open_randsrc();
-    output = fopen(fileout,"w");
-
-    if(src==NULL || output==NULL){
-        exit(1);
-    }
-
-    for(uint32_t i=0; i<point_num;i++){
-        fprintf(output,"%g %g\n",random_double(src),random_double(src));
-    }
-
-    fclose(src);
-    fclose(output);
-
-    return;
-}
-
-FILE *open_randsrc(){
-    return fopen("/dev/urandom","r");
-}
-
-double random_double(FILE *src){
-
-    return (((double)random_int(src)/(double)0xFFFFFFFF) * (double)5.0) - (double)2.5;
-
-}
-
-uint32_t random_int(FILE *src){
-
-    if(src==NULL){
-        return 0;
-    }
-
-    uint32_t rdn;
-    fread(&rdn,sizeof(rdn),1,src);
-    return rdn;
-}
-
+//find the index of the lowest and leftmost point aka p0
 uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num){
-
     point_s lowest = {all_points[0].x,all_points[0].y};
     uint32_t index = 0;
-
     for(uint32_t i=1;i<point_num;i++){
         //record index of lowest point
         if(lowest.y>all_points[i].y){
@@ -261,63 +224,47 @@ uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num){
             lowest.x = all_points[i].x;
             index = i;
         //record index of lowest and leftmost point
-        }else if((lowest.y==all_points[i].y)&&(lowest.x>all_points[i].x)){
+        } else if((lowest.y==all_points[i].y)&&(lowest.x>all_points[i].x)){
             lowest.x = all_points[i].x;
             index = i; 
         }
     }
     return index;
 }
-
+//find the maximum ranges for the plot
 plot_range_s get_range(point_s *all_points,uint32_t point_num){
-
     plot_range_s range = {all_points[0].x,all_points[0].x,all_points[0].y,all_points[0].y};
-
     for(uint32_t i=1;i<point_num;i++){
-
-        if(range.x_min > all_points[i].x){
+        if(range.x_min > all_points[i].x)
             range.x_min = all_points[i].x;
-        }
-        if(range.x_max < all_points[i].x){
+        if(range.x_max < all_points[i].x)
             range.x_max = all_points[i].x;
-        }
-        if(range.y_min > all_points[i].y){
+        if(range.y_min > all_points[i].y)
             range.y_min = all_points[i].y;
-        }
-        if(range.y_max < all_points[i].y){
+        if(range.y_max < all_points[i].y)
             range.y_max = all_points[i].y;
-        }
     }
-
     return range;
 }
 
-//----START STACK FUNCS
 //creates a new stack item
-stack_item *new_item(item_ptr data, stack_item *lower_item ){
-
+stack_item *new_item(item_ptr data, stack_item *lower_item){
     stack_item *new = (stack_item *)malloc(sizeof(stack_item));
-    if(new ==NULL){
+    if(new ==NULL)
         exit(1);
-    }
     new->data=data;
     new->lower_item=lower_item;
-
     return new;
 }
-
 //push item to the stack
 void push(item_ptr data,stack_item **stack){
-
     *stack = new_item(data,*stack);
     return;
 }
 //pop item from the stack
 item_ptr pop(stack_item **stack){
-
     item_ptr output = NULL;
     stack_item *lower_item = NULL;
-
     //check for an empty stack
     if((*stack)!=NULL){
         //extract data for return
@@ -331,42 +278,36 @@ item_ptr pop(stack_item **stack){
     }
     return output;
 }
-
 //transfer item from one stack to another
 uint8_t stack_transfer(stack_item **src_stack,stack_item **dst_stack){
     item_ptr temp = NULL;
     temp = pop(src_stack);
-    if(temp==NULL){
+    if(temp==NULL)
         return 1;
-    }
     push(temp,dst_stack);
     return 0;
 }
-
+//pop and print all elements fro stack
 void dump_stack(stack_item **stack){
     item_ptr output = NULL;
     while(true){
         output = pop(stack);
-        if(output==NULL){
+        if(output==NULL)
             break;
-            }
-        printf("[%g,%g] theta=%g\n",output->x,output->y,output->angle_wrt_p0);
+        printf("[%g,%g] angle=%g\n",output->x,output->y,output->angle_wrt_p0);
     }
     return;
 }
-//----END STACK FUNCS
 
-//----START MATH FUNCS
+//compute the angle at which the point is wrt to p0
 double get_angle(double x1, double y1, double p0x, double p0y){
     return atan2(y1-p0y,x1-p0x);
 }
-
+//compute the magnitude of the p0 - point vector
 double get_magnitude(double x1, double y1, double p0x, double p0y){
     return sqrt(pow((x1-p0x),2)+pow((y1-p0y),2));
 }
-
-//Order all points wrt p0 by angle
-//Return the resulting stack (top of the stack should be the point with the smallest angle)
+//Order all points wrt p0 by angle and return a stack (top of the stack should be the point with the smallest angle)
 stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx){
 
     //Define p0
@@ -387,12 +328,12 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
     while(true){
 
         evald = pop(&initial);
-        if(evald==NULL){break;}
+        if(evald==NULL)
+            break;
         evald->angle_wrt_p0 = get_angle(evald->x,evald->y,p0.x,p0.y);
         double m_evald, m_top;
         
         while(true){
-
             if(s1==NULL){
                 //Case 1: S1 is empty
                 push(evald,&s1);
@@ -447,6 +388,5 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
             }
         }
     }
-
     return s1;    
 }
