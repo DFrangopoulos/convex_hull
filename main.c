@@ -51,6 +51,12 @@ double get_angle(double x1, double y1, double p0x, double p0y);
 double get_magnitude(double x1, double y1, double p0x, double p0y);
 stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx);
 
+bool cwt(item_ptr p, item_ptr c,item_ptr n);
+void graham_scan(stack_item **sorted_stack, stack_item **hull_stack, stack_item **inner_stack);
+
+FILE *setup_gnuplot(plot_range_s range);
+void plot_points(stack_item **point_stack, FILE *gnuplot);
+void close_gnuplot(FILE *gnuplot);
 
 //arg1 -> filename
 //arg2 -> point_num
@@ -58,94 +64,106 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
 int main(int argc , char **argv){
 
     //Check arg count
-    if(argc!=4){
+    if(argc!=4)
         return 1;
-    }
 
+    //Get point count
     int point_num =0;
     point_num = atoi(argv[2]);
-
-    if(point_num<1){
+    if(point_num<1)
         exit(1);
-    }
 
-    int regen =0;
+    //Check if the point file needs to be regenerated
+    int regen = 0;
     regen = atoi(argv[3]);
-
     //if regen isn't 0 create new file and use it
-    if(regen > 0){  
+    if(regen > 0)
         genpoints_to_file(argv[1],point_num);
-    }
 
+    //Load points
     point_s *all_points = NULL;
     all_points = (point_s *)malloc(sizeof(point_s)*point_num);
 
-    if(all_points==NULL){
+    if(all_points==NULL)
         exit(1);
-    }
 
-    if (read_point_s_file(argv[1], point_num, all_points)>0){
+    if(read_point_s_file(argv[1], point_num, all_points)>0)
         exit(1);
-    }
 
+    //Find p0 index and calculate range
     uint32_t low_leftmost_idx = lowest_point_idx(all_points, point_num);
     plot_range_s range = get_range(all_points,point_num);
 
-    
-
+    //Sort points into a stack with smallest angle wrt p0 on top
     stack_item *sorted = polar_order(all_points,point_num,low_leftmost_idx);
+    //Put p0 on top
+    push(&(all_points[low_leftmost_idx]),&sorted);
 
-    dump_stack(&sorted);
+    //Graham Scan
+    stack_item *hull_stack = NULL, *inner_stack = NULL;
+    graham_scan(&sorted, &hull_stack, &inner_stack);
 
-    //Open a pipe to gnuplot
-    FILE *gnuplot = popen("gnuplot --persist", "w");
-    if(gnuplot==NULL){
+    //printf("Hull\n");
+    //dump_stack(&hull_stack);
+
+    //printf("Inner\n");
+    //dump_stack(&inner_stack);
+
+    //push p0 on onto hull_stack for gnuplot to close the circle
+    push(&(all_points[low_leftmost_idx]),&hull_stack);
+
+    FILE *gnuplot = setup_gnuplot(range);
+    if(gnuplot==NULL)
         exit(1);
-    }
 
-
-    fprintf(gnuplot,"set key off\n");
-    fprintf(gnuplot,"set xrange [%g:%g]\n",range.x_min-1,range.x_max+1);
-    fprintf(gnuplot,"set yrange [%g:%g]\n",range.y_min-1,range.y_max+1);
-    fprintf(gnuplot, "set style line 1 linecolor rgb 'green' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
-    fprintf(gnuplot, "set style line 2 linecolor rgb 'red' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
-    fprintf(gnuplot, "plot '-' with points pointtype 1 pointsize 1.5 , '-' with linespoints linestyle 2, '-' with linespoints linestyle 1\n");
-
-    for(uint32_t i=0;i<low_leftmost_idx;i++){
-        fprintf(gnuplot,"%g %g\n",all_points[i].x,all_points[i].y);
-    }
-    fprintf(gnuplot,"e\n");
-
-    fprintf(gnuplot,"%g %g\n",all_points[low_leftmost_idx].x,all_points[low_leftmost_idx].y);
-    fprintf(gnuplot,"e\n");
-
-    for(uint32_t i=low_leftmost_idx+1;i<point_num;i++){
-        fprintf(gnuplot,"%g %g\n",all_points[i].x,all_points[i].y);
-    }
-    fprintf(gnuplot,"e\n");
-
-    fflush(gnuplot);
-
-    //fprintf(gnuplot, "set xrange [-10:10]\n");
-    //fprintf(gnuplot, "set yrange [-10:10]\n");
-    //fprintf(gnuplot, "set style line 1 linecolor rgb '#0060ad' linetype 1 linewidth 2 pointtype 7 pointsize 1.5\n");
-    //fprintf(gnuplot, "plot '-' with linespoints linestyle 1, '-'\n");
-
-    //for(uint32_t i=0;i<5;i++){
-    //    fprintf(gnuplot,"%g %g\n",all_points[i].x,all_points[i].y);
-    //}
-    //fprintf(gnuplot,"e\n");
-
-    //for(uint32_t i=5;i<15;i++){
-    //    fprintf(gnuplot,"%g %g\n",all_points[i].x,all_points[i].y);
-    //}
-    //fprintf(gnuplot,"e\n");
-
-    //fflush(gnuplot);
+    plot_points(&hull_stack,gnuplot);
+    plot_points(&inner_stack,gnuplot);
+    close_gnuplot(gnuplot);
+    
+    
+    //fprintf(gnuplot, "set style line 1 linecolor rgb 'green' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
+    //fprintf(gnuplot, "set style line 2 linecolor rgb 'red' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
+    //fprintf(gnuplot, "plot '-' with points pointtype 1 pointsize 1.5 , '-' with linespoints linestyle 2, '-' with linespoints linestyle 1\n");
 
     free(all_points);
 
     return 0;
+}
+
+//Open gnuplot pipe and setup
+FILE *setup_gnuplot(plot_range_s range){
+    //Open a pipe to gnuplot
+    FILE *gnuplot = popen("gnuplot --persist", "w");
+    if(gnuplot==NULL)
+        return NULL;
+    //Setup plot with ranges
+    fprintf(gnuplot,"set key off\n");
+    fprintf(gnuplot,"set xrange [%g:%g]\n",range.x_min-1,range.x_max+1);
+    fprintf(gnuplot,"set yrange [%g:%g]\n",range.y_min-1,range.y_max+1);
+    //Create hull linestyle
+    fprintf(gnuplot, "set style line 1 linecolor rgb 'green' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
+    //Prepare plotting first plot hull then the inner points
+    fprintf(gnuplot, "plot  '-' with linespoints linestyle 1, '-' with points pointtype 1 pointsize 1.5\n");
+    fflush(gnuplot);
+    return gnuplot;
+}
+//Plot points
+void plot_points(stack_item **point_stack, FILE *gnuplot){
+    item_ptr output = NULL;
+    while(true){
+        output = pop(point_stack);
+        if(output==NULL)
+            break;
+        fprintf(gnuplot,"%g %g\n",output->x,output->y);
+    }
+    fprintf(gnuplot,"e\n");
+    fflush(gnuplot);
+    return;
+}
+//Close pipe
+void close_gnuplot(FILE *gnuplot){
+    fflush(gnuplot);
+    pclose(gnuplot);
 }
 
 //open /dev/urandom as a source
@@ -389,4 +407,62 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
         }
     }
     return s1;    
+}
+
+
+//Check for a clockwise turn using the 2D "cross product"
+bool cwt(item_ptr p, item_ptr c,item_ptr n){
+    //if the 2D "cross-product" is less than 0 then the turn is clockwise
+    //also treat collinear vectors as a clockwise turn
+    if( ( (c->x - p->x) * (n->y - c->y) - (c->y - p->y) * (n->x - c->x) ) <=0 )
+        return true;
+    return false;
+}
+//Graham Scan
+void graham_scan(stack_item **sorted_stack, stack_item **hull_stack, stack_item **inner_stack){
+
+    //transfer p0 to hull_stack
+    stack_transfer(sorted_stack,hull_stack);
+
+    //add first point (after p0) to the hull stack to prime the loop
+    stack_transfer(sorted_stack,hull_stack);
+    item_ptr previous, current, next;
+
+    while(true){
+        //get next point
+        next = pop(sorted_stack);
+        if(next == NULL)
+            break;
+        
+        if(*hull_stack!=NULL){
+            if((*hull_stack)->lower_item!=NULL){
+                current = (*hull_stack)->data;
+                previous = (*hull_stack)->lower_item->data;
+            }
+        }
+
+        while(true){
+            //if a cwt is made discard current point
+            if(cwt(previous,current,next)){
+                stack_transfer(hull_stack,inner_stack);
+                //update points
+                if(*hull_stack!=NULL){
+                    if((*hull_stack)->lower_item!=NULL){
+                        current = (*hull_stack)->data;
+                        previous = (*hull_stack)->lower_item->data;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                push(next,hull_stack);
+                break;
+            }
+        }
+        
+    }
+
+    return;
 }
