@@ -33,14 +33,27 @@ typedef struct stack_item{
     struct stack_item *lower_item;
 }stack_item; 
 
+
+uint32_t command_to_32(char *command);
+void convex_func(char *filename);
+void check_func(char *filename, char *check_x, char *check_y);
+void intersect_func(char *filename1, char *filename2);
+void generate_func(char *filename, char *points);
+
+FILE *setup_gnuplot(plot_range_s range);
+FILE *setup_gnuplot_inter(plot_range_s range);
+void plot_points(stack_item **point_stack, FILE *gnuplot);
+void close_gnuplot(FILE *gnuplot);
+
 FILE *open_randsrc();
 double random_double(FILE *src);
 uint32_t random_int(FILE *src);
+
 void genpoints_to_file(char *fileout, uint32_t point_num);
 uint8_t read_point_s_file(char *filename,uint32_t point_num, point_s *all_points);
 
-uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num);
 plot_range_s get_range(point_s *all_points,uint32_t point_num);
+plot_range_s combine_ranges(plot_range_s range1, plot_range_s range2);
 
 stack_item *new_item(item_ptr data, stack_item *lower_item);
 void push(item_ptr data,stack_item **stack);
@@ -54,22 +67,14 @@ double get_angle(double x1, double y1, double p0x, double p0y);
 double get_magnitude(double x1, double y1, double p0x, double p0y);
 double cp2d(item_ptr a, item_ptr b, item_ptr c);
 
+uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num);
 stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx);
 bool cwt(item_ptr p, item_ptr c,item_ptr n);
 void graham_scan(stack_item **sorted_stack, stack_item **hull_stack, stack_item **inner_stack);
+
+void compute_convex_hull(char *filename, point_s **all_points, uint32_t *low_leftmost_idx, stack_item **hull_stack, stack_item **inner_stack, plot_range_s *range);
 bool is_in_hull(stack_item** hull,item_ptr test_point);
-
-
-FILE *setup_gnuplot(plot_range_s range);
-void plot_points(stack_item **point_stack, FILE *gnuplot);
-void close_gnuplot(FILE *gnuplot);
-
-
-uint32_t command_to_32(char *command);
-void convex_func(char *filename);
-void check_func(char *filename, char *check_x, char *check_y);
-
-
+bool intersecting(stack_item** hull_1, stack_item** hull_2);
 
 
 int main(int argc , char **argv){
@@ -87,6 +92,7 @@ int main(int argc , char **argv){
     if(argc<2)
         exit(1);
     
+    //find command by id and call the appropriate function
     switch (command_to_32(argv[1])){
     case 659:
         if(argc==3)
@@ -98,103 +104,19 @@ int main(int argc , char **argv){
         break;
     case 977:
         if(argc==4)
-            //run intersect function
+            intersect_func(argv[2],argv[3]);
         break;
     case 843:
         if(argc==4)
-            //run generate function
+            generate_func(argv[2],argv[3]);
         break;
     default:
         break;
     }
     return 0;
-
-    //Check arg count
-    if(argc!=4)
-        return 1;
-
-    //Get point count
-    int point_num =0;
-    point_num = atoi(argv[2]);
-    if(point_num<1)
-        exit(1);
-
-    //Check if the point file needs to be regenerated
-    int regen = 0;
-    regen = atoi(argv[3]);
-    //if regen isn't 0 create new file and use it
-    if(regen > 0)
-        genpoints_to_file(argv[1],point_num);
-
-    //Load points
-    point_s *all_points = NULL;
-    all_points = (point_s *)malloc(sizeof(point_s)*point_num);
-
-    if(all_points==NULL)
-        exit(1);
-
-    if(read_point_s_file(argv[1], point_num, all_points)>0)
-        exit(1);
-
-    //Find p0 index
-    uint32_t low_leftmost_idx = lowest_point_idx(all_points, point_num);
-    //set angle to 0
-    all_points[low_leftmost_idx].angle_wrt_p0=0;
-    //calculate range
-    plot_range_s range = get_range(all_points,point_num);
-
-    //Sort points into a stack with smallest angle wrt p0 on top
-    stack_item *sorted = polar_order(all_points,point_num,low_leftmost_idx);
-    //Put p0 on top
-    push(&(all_points[low_leftmost_idx]),&sorted);
-
-    //Graham Scan
-    stack_item *hull_stack = NULL, *inner_stack = NULL;
-    graham_scan(&sorted, &hull_stack, &inner_stack);
-
-    //Reverse Duplicate hull_stack
-    stack_item *rev_hull_stack = NULL;
-    rev_duplicate_stack(&hull_stack, &rev_hull_stack);
-
-    point_s test_point = {-2.2 , -1.5 , 0};
-
-    if(is_in_hull(&rev_hull_stack, &test_point))
-        printf("In the hull\n");
-    else
-        printf("Not in the hull\n");
-
-    //Find if point is in convex hull
-
-
-    //printf("RDupHull\n");
-    //dump_stack(&rev_hull_stack);
-
-    //printf("Inner\n");
-    //dump_stack(&inner_stack);
-
-    //push p0 on onto hull_stack for gnuplot to close the circle
-    push(&(all_points[low_leftmost_idx]),&hull_stack);
-
-    FILE *gnuplot = setup_gnuplot(range);
-    if(gnuplot==NULL)
-        exit(1);
-
-    plot_points(&hull_stack,gnuplot);
-    plot_points(&inner_stack,gnuplot);
-    close_gnuplot(gnuplot);
-    
-    
-    //fprintf(gnuplot, "set style line 1 linecolor rgb 'green' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
-    //fprintf(gnuplot, "set style line 2 linecolor rgb 'red' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
-    //fprintf(gnuplot, "plot '-' with points pointtype 1 pointsize 1.5 , '-' with linespoints linestyle 2, '-' with linespoints linestyle 1\n");
-
-    for(uint32_t i=0; i<point_num;i++){
-        printf("%e %e\n",all_points[i].x,all_points[i].y);
-    }
-    free(all_points);
-
-    return 0;
 }
+
+
 //Get command id code
 uint32_t command_to_32(char *command){
     uint32_t id = 0;
@@ -209,51 +131,14 @@ uint32_t command_to_32(char *command){
         i++;
     }
 }
+
 //convex command function
 void convex_func(char *filename){
-
-    //Get the number of points in the file
-    uint32_t point_num = 0;
-
-    FILE *input;
-    input = fopen(filename,"r");
-    if(input==NULL)
-        exit(1);
-    char tmp;
-    while(true){
-        tmp = getc(input);
-        if(tmp==0x0a)
-            point_num++;
-        if(tmp==EOF)
-            break;
-    }
-    fclose(input);
-
-    //Ingest Points
     point_s *all_points = NULL;
-    all_points = (point_s *)malloc(sizeof(point_s)*point_num);
-    if(all_points==NULL)
-        exit(1);
-    
-    if(read_point_s_file(filename,point_num,all_points)>0)
-        exit(1);
-
-    //Find p0 index
-    uint32_t low_leftmost_idx = lowest_point_idx(all_points, point_num);
-    //set angle to 0
-    all_points[low_leftmost_idx].angle_wrt_p0=0;
-    //calculate range
-    plot_range_s range = get_range(all_points,point_num);
-
-    //Sort points into a stack with smallest angle wrt p0 on top
-    stack_item *sorted = polar_order(all_points,point_num,low_leftmost_idx);
-    //Put p0 on top
-    push(&(all_points[low_leftmost_idx]),&sorted);
-
-    //Graham Scan
     stack_item *hull_stack = NULL, *inner_stack = NULL;
-    graham_scan(&sorted, &hull_stack, &inner_stack);
-
+    uint32_t low_leftmost_idx = 0;
+    plot_range_s range;
+    compute_convex_hull(filename, &all_points, &low_leftmost_idx, &hull_stack, &inner_stack, &range);
     if(UNITTEST){
         item_ptr output = NULL;
         while(true){
@@ -274,7 +159,6 @@ void convex_func(char *filename){
         plot_points(&inner_stack,gnuplot);
         close_gnuplot(gnuplot);
     }
-    dump_stack(&sorted,true);
     dump_stack(&hull_stack,true);
     dump_stack(&inner_stack,true);
     free(all_points);
@@ -282,55 +166,16 @@ void convex_func(char *filename){
 }
 //check command function
 void check_func(char *filename, char *check_x, char *check_y){
-    //Get the number of points in the file
-    uint32_t point_num = 0;
-
-    FILE *input;
-    input = fopen(filename,"r");
-    if(input==NULL)
-        exit(1);
-    char tmp;
-    while(true){
-        tmp = getc(input);
-        if(tmp==0x0a)
-            point_num++;
-        if(tmp==EOF)
-            break;
-    }
-    fclose(input);
-
-    //Ingest Points
     point_s *all_points = NULL;
-    all_points = (point_s *)malloc(sizeof(point_s)*point_num);
-    if(all_points==NULL)
-        exit(1);
-    
-    if(read_point_s_file(filename,point_num,all_points)>0)
-        exit(1);
-
-    //Find p0 index
-    uint32_t low_leftmost_idx = lowest_point_idx(all_points, point_num);
-    //set angle to 0
-    all_points[low_leftmost_idx].angle_wrt_p0=0;
-    //calculate range
-    plot_range_s range = get_range(all_points,point_num);
-
-    //Sort points into a stack with smallest angle wrt p0 on top
-    stack_item *sorted = polar_order(all_points,point_num,low_leftmost_idx);
-    //Put p0 on top
-    push(&(all_points[low_leftmost_idx]),&sorted);
-
-    //Graham Scan
     stack_item *hull_stack = NULL, *inner_stack = NULL;
-    graham_scan(&sorted, &hull_stack, &inner_stack);
-
+    uint32_t low_leftmost_idx = 0;
+    plot_range_s range;
+    compute_convex_hull(filename, &all_points, &low_leftmost_idx, &hull_stack, &inner_stack, &range);
     //Ingest point to check
     point_s test_point = {atof(check_x), atof(check_y), 0};
-
     //Reverse the hull stack
     stack_item *rev_hull_stack = NULL;
     rev_duplicate_stack(&hull_stack, &rev_hull_stack);
-
     if(UNITTEST){
         if(is_in_hull(&rev_hull_stack,&test_point))
             fprintf(stderr,"true\n");
@@ -342,15 +187,60 @@ void check_func(char *filename, char *check_x, char *check_y){
         else
             fprintf(stdout,"false\n");
     }
-
-    dump_stack(&sorted,true);
     dump_stack(&hull_stack,true);
     dump_stack(&inner_stack,true);
     dump_stack(&rev_hull_stack,true);
     free(all_points);
     return;
 }
+//intersect command function
+void intersect_func(char *filename1, char *filename2){
+    point_s *all_points1 = NULL, *all_points2 = NULL;
+    stack_item *hull_stack1 = NULL, *hull_stack2 = NULL, *inner_stack1 = NULL, *inner_stack2 = NULL;
+    uint32_t low_leftmost_idx1 = 0, low_leftmost_idx2 = 0;
+    plot_range_s range1, range2;
+    bool intersec = false;
+    compute_convex_hull(filename1, &all_points1, &low_leftmost_idx1, &hull_stack1, &inner_stack1, &range1);
+    compute_convex_hull(filename2, &all_points2, &low_leftmost_idx2, &hull_stack2, &inner_stack2, &range2);
+    intersec = intersecting(&hull_stack1, &hull_stack2);
+    plot_range_s range = combine_ranges(range1, range2);
+    if(UNITTEST){
+        if(intersec)
+            fprintf(stderr,"true\n");
+        else
+            fprintf(stderr,"false\n");    
+    } else {
+        //push p0 on onto hull_stack for gnuplot to close the circle
+        push(&(all_points1[low_leftmost_idx1]),&hull_stack1);
+        push(&(all_points2[low_leftmost_idx2]),&hull_stack2);
 
+        FILE *gnuplot = setup_gnuplot_inter(range);
+            if(gnuplot==NULL)
+        exit(1);
+        plot_points(&hull_stack1,gnuplot);
+        plot_points(&inner_stack1,gnuplot);
+        plot_points(&hull_stack2,gnuplot);
+        plot_points(&inner_stack2,gnuplot);
+        close_gnuplot(gnuplot);
+        if(intersec)
+            fprintf(stdout,"true\n");
+        else
+            fprintf(stdout,"false\n");   
+    }
+    dump_stack(&hull_stack1,true);
+    dump_stack(&inner_stack1,true);
+    dump_stack(&hull_stack2,true);
+    dump_stack(&inner_stack2,true);
+    free(all_points1);
+    free(all_points2);
+    return;
+}
+//generate command function
+void generate_func(char *filename, char *points){
+    uint32_t point_num = 0;
+    point_num = atoi(points);
+    genpoints_to_file(filename,point_num);
+}
 
 //Open gnuplot pipe and setup
 FILE *setup_gnuplot(plot_range_s range){
@@ -364,8 +254,25 @@ FILE *setup_gnuplot(plot_range_s range){
     fprintf(gnuplot,"set yrange [%g:%g]\n",range.y_min-1,range.y_max+1);
     //Create hull linestyle
     fprintf(gnuplot, "set style line 1 linecolor rgb 'green' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
-    //Prepare plotting first plot hull then the inner points
     fprintf(gnuplot, "plot  '-' with linespoints linestyle 1, '-' with points pointtype 1 pointsize 1.5\n");
+    fflush(gnuplot);
+    return gnuplot;
+}
+//Open gnuplot pipe and setup (when plotting 2 convex hulls)
+FILE *setup_gnuplot_inter(plot_range_s range){
+    //Open a pipe to gnuplot
+    FILE *gnuplot = popen("gnuplot --persist", "w");
+    if(gnuplot==NULL)
+        return NULL;
+    //Setup plot with ranges
+    fprintf(gnuplot,"set key off\n");
+    fprintf(gnuplot,"set xrange [%g:%g]\n",range.x_min-1,range.x_max+1);
+    fprintf(gnuplot,"set yrange [%g:%g]\n",range.y_min-1,range.y_max+1);
+    //Create 2 hull linestyles
+    fprintf(gnuplot, "set style line 1 linecolor rgb 'green' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
+    fprintf(gnuplot, "set style line 2 linecolor rgb 'red' linetype 1 linewidth 0 pointtype 1 pointsize 1.5\n");
+    fprintf(gnuplot, "plot  '-' with linespoints linestyle 1, '-' with points pointtype 1 pointsize 1.5,");
+    fprintf(gnuplot, " '-' with linespoints linestyle 2, '-' with points pointtype 1 pointsize 1.5\n");
     fflush(gnuplot);
     return gnuplot;
 }
@@ -388,6 +295,7 @@ void close_gnuplot(FILE *gnuplot){
     pclose(gnuplot);
 }
 
+
 //open /dev/urandom as a source
 FILE *open_randsrc(){
     return fopen("/dev/urandom","r");
@@ -404,6 +312,7 @@ uint32_t random_int(FILE *src){
     fread(&rdn,sizeof(rdn),1,src);
     return rdn;
 }
+
 //Generate random points and write them to a file
 void genpoints_to_file(char *fileout, uint32_t point_num){
     FILE *src, *output;
@@ -411,7 +320,6 @@ void genpoints_to_file(char *fileout, uint32_t point_num){
     output = fopen(fileout,"w");
     if(src==NULL || output==NULL)
         exit(1);
-
     for(uint32_t i=0; i<point_num;i++){
         fprintf(output,"%g %g\n",random_double(src),random_double(src));
     }
@@ -453,24 +361,6 @@ uint8_t read_point_s_file(char *filename,uint32_t point_num, point_s *all_points
     return 0;
 }
 
-//find the index of the lowest and leftmost point aka p0
-uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num){
-    point_s lowest = {all_points[0].x,all_points[0].y};
-    uint32_t index = 0;
-    for(uint32_t i=1;i<point_num;i++){
-        //record index of lowest point
-        if(lowest.y>all_points[i].y){
-            lowest.y = all_points[i].y;
-            lowest.x = all_points[i].x;
-            index = i;
-        //record index of lowest and leftmost point
-        } else if((lowest.y==all_points[i].y)&&(lowest.x>all_points[i].x)){
-            lowest.x = all_points[i].x;
-            index = i; 
-        }
-    }
-    return index;
-}
 //find the maximum ranges for the plot
 plot_range_s get_range(point_s *all_points,uint32_t point_num){
     plot_range_s range = {all_points[0].x,all_points[0].x,all_points[0].y,all_points[0].y};
@@ -484,6 +374,31 @@ plot_range_s get_range(point_s *all_points,uint32_t point_num){
         if(range.y_max < all_points[i].y)
             range.y_max = all_points[i].y;
     }
+    return range;
+}
+//combine ranges when plotting two
+plot_range_s combine_ranges(plot_range_s range1, plot_range_s range2){
+    plot_range_s range;
+    if(range1.x_min < range2.x_min)
+        range.x_min = range1.x_min;
+    else
+        range.x_min = range2.x_min;
+    
+    if(range1.x_max > range2.x_max)
+        range.x_max = range1.x_max;
+    else
+        range.x_max = range2.x_max;
+
+    if(range1.y_min < range2.y_min)
+        range.y_min = range1.y_min;
+    else
+        range.y_min = range2.y_min;
+    
+    if(range1.y_max > range2.y_max)
+        range.y_max = range1.y_max;
+    else
+        range.y_max = range2.y_max;
+
     return range;
 }
 
@@ -580,6 +495,30 @@ double get_angle(double x1, double y1, double p0x, double p0y){
 double get_magnitude(double x1, double y1, double p0x, double p0y){
     return sqrt(pow((x1-p0x),2)+pow((y1-p0y),2));
 }
+//2D cross-product
+double cp2d(item_ptr a, item_ptr b, item_ptr c){
+    //||BA x BC|| = (ax-bx)*(cy-by)-(ay-by)*(cx-bx)
+    return ((a->x - b->x) * (c->y - b->y) - (a->y - b->y) * (c->x - b->x));
+}
+
+//find the index of the lowest and leftmost point aka p0
+uint32_t lowest_point_idx(point_s *all_points,uint32_t point_num){
+    point_s lowest = {all_points[0].x,all_points[0].y};
+    uint32_t index = 0;
+    for(uint32_t i=1;i<point_num;i++){
+        //record index of lowest point
+        if(lowest.y>all_points[i].y){
+            lowest.y = all_points[i].y;
+            lowest.x = all_points[i].x;
+            index = i;
+        //record index of lowest and leftmost point
+        } else if((lowest.y==all_points[i].y)&&(lowest.x>all_points[i].x)){
+            lowest.x = all_points[i].x;
+            index = i; 
+        }
+    }
+    return index;
+}
 //Order all points wrt p0 by angle and return a stack (top of the stack should be the point with the smallest angle)
 stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx){
 
@@ -663,8 +602,6 @@ stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_left
     }
     return s1;    
 }
-
-
 //Check for a clockwise turn using the 2D "cross product"
 bool cwt(item_ptr p, item_ptr c,item_ptr n){
     //if the 2D "cross-product" is less than 0 then the turn is clockwise
@@ -721,10 +658,49 @@ void graham_scan(stack_item **sorted_stack, stack_item **hull_stack, stack_item 
 
     return;
 }
-//2D cross-product
-double cp2d(item_ptr a, item_ptr b, item_ptr c){
-    //||BA x BC|| = (ax-bx)*(cy-by)-(ay-by)*(cx-bx)
-    return ((a->x - b->x) * (c->y - b->y) - (a->y - b->y) * (c->x - b->x));
+
+//function that computes the convex hull
+void compute_convex_hull(char *filename, point_s **all_points, uint32_t *low_leftmost_idx, stack_item **hull_stack, stack_item **inner_stack, plot_range_s *range){
+    //Get the number of points in the file
+    uint32_t point_num = 0;
+
+    FILE *input;
+    input = fopen(filename,"r");
+    if(input==NULL)
+        exit(1);
+    char tmp;
+    while(true){
+        tmp = getc(input);
+        if(tmp==0x0a)
+            point_num++;
+        if(tmp==EOF)
+            break;
+    }
+    fclose(input);
+
+    //Ingest Points
+    (*all_points) = (point_s *)malloc(sizeof(point_s)*point_num);
+    if((*all_points)==NULL)
+        exit(1);
+    if(read_point_s_file(filename,point_num,(*all_points))>0)
+        exit(1);
+
+    //Find p0 index
+    *low_leftmost_idx = lowest_point_idx((*all_points), point_num);
+    //set angle to 0
+    (*all_points)[*low_leftmost_idx].angle_wrt_p0=0;
+
+    //Sort points into a stack with smallest angle wrt p0 on top
+    stack_item *sorted = polar_order((*all_points),point_num,*low_leftmost_idx);
+    //Put p0 on top
+    push(&((*all_points)[*low_leftmost_idx]),&sorted);
+    //calculate gnuplot range
+    *range = get_range((*all_points),point_num);
+
+    //Graham Scan
+    graham_scan(&sorted, hull_stack, inner_stack);
+    dump_stack(&sorted,true);
+    return;
 }
 //find convex hull sector
 bool is_in_hull(stack_item** hull,item_ptr test_point){
@@ -771,12 +747,12 @@ bool intersecting(stack_item** hull_1, stack_item** hull_2){
 
     //test hull 1 points against hull 2
     //duplicate input stacks
-    rev_duplicate_stack(hull_1, &rev_hull_1);
-    rev_duplicate_stack(hull_2, &rev_hull_2);
+    duplicate_stack(hull_1, &rev_hull_1);
     while(true){
         tmp = pop(&rev_hull_1);
         if(tmp==NULL)
             break;
+        rev_duplicate_stack(hull_2, &rev_hull_2);
         result = is_in_hull(&rev_hull_2, tmp);
         if(result){
             dump_stack(&rev_hull_1, true);
@@ -791,12 +767,12 @@ bool intersecting(stack_item** hull_1, stack_item** hull_2){
 
     //test hull 2 points against hull 1
     //duplicate input stacks
-    rev_duplicate_stack(hull_1, &rev_hull_1);
-    rev_duplicate_stack(hull_2, &rev_hull_2);
+    duplicate_stack(hull_2, &rev_hull_2);
     while(true){
         tmp = pop(&rev_hull_2);
         if(tmp==NULL)
             break;
+        rev_duplicate_stack(hull_1, &rev_hull_1);
         result = is_in_hull(&rev_hull_1, tmp);
         if(result){
             dump_stack(&rev_hull_1, true);
