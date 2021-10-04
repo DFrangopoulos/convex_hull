@@ -46,13 +46,18 @@ void push(item_ptr data,stack_item **stack);
 item_ptr pop(stack_item **stack);
 uint8_t stack_transfer(stack_item **src_stack,stack_item **dst_stack);
 void dump_stack(stack_item **stack);
+void duplicate_stack(stack_item **in_stack, stack_item **copy_stack);
+void rev_duplicate_stack(stack_item **in_stack, stack_item **rev_copy_stack);
 
 double get_angle(double x1, double y1, double p0x, double p0y);
 double get_magnitude(double x1, double y1, double p0x, double p0y);
-stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx);
+double cp2d(item_ptr a, item_ptr b, item_ptr c);
 
+stack_item *polar_order(point_s *all_points,uint32_t point_num,uint32_t low_leftmost_idx);
 bool cwt(item_ptr p, item_ptr c,item_ptr n);
 void graham_scan(stack_item **sorted_stack, stack_item **hull_stack, stack_item **inner_stack);
+bool is_in_hull(stack_item** hull,point_s test_point);
+
 
 FILE *setup_gnuplot(plot_range_s range);
 void plot_points(stack_item **point_stack, FILE *gnuplot);
@@ -90,8 +95,11 @@ int main(int argc , char **argv){
     if(read_point_s_file(argv[1], point_num, all_points)>0)
         exit(1);
 
-    //Find p0 index and calculate range
+    //Find p0 index
     uint32_t low_leftmost_idx = lowest_point_idx(all_points, point_num);
+    //set angle to 0
+    all_points[low_leftmost_idx].angle_wrt_p0=0;
+    //calculate range
     plot_range_s range = get_range(all_points,point_num);
 
     //Sort points into a stack with smallest angle wrt p0 on top
@@ -103,8 +111,22 @@ int main(int argc , char **argv){
     stack_item *hull_stack = NULL, *inner_stack = NULL;
     graham_scan(&sorted, &hull_stack, &inner_stack);
 
-    //printf("Hull\n");
-    //dump_stack(&hull_stack);
+    //Reverse Duplicate hull_stack
+    stack_item *rev_hull_stack = NULL;
+    rev_duplicate_stack(&hull_stack, &rev_hull_stack);
+
+    point_s test_point = {-2.2 , -1.5 , 0};
+
+    if(is_in_hull(&rev_hull_stack, test_point))
+        printf("In the hull\n");
+    else
+        printf("Not in the hull\n");
+
+    //Find if point is in convex hull
+
+
+    //printf("RDupHull\n");
+    //dump_stack(&rev_hull_stack);
 
     //printf("Inner\n");
     //dump_stack(&inner_stack);
@@ -316,6 +338,38 @@ void dump_stack(stack_item **stack){
     }
     return;
 }
+//duplicate input stack into copy stack
+void duplicate_stack(stack_item **in_stack, stack_item **copy_stack){
+    stack_item *tmp = NULL;
+    //flip all elements
+    while(!stack_transfer(in_stack,&tmp));
+    //pushback to in_stack and copy
+    item_ptr tmp2 = NULL;
+    while(true){
+        tmp2 = pop(&tmp);
+        if(tmp2==NULL)
+            break;
+        push(tmp2,in_stack);
+        push(tmp2,copy_stack);
+    }
+    return;
+}
+//reverse duplicate input stack into rev copy stack
+void rev_duplicate_stack(stack_item **in_stack, stack_item **rev_copy_stack){
+    stack_item *tmp = NULL;
+    item_ptr tmp2 = NULL;
+    //flip all elements and copy to two stacks
+    while(true){
+        tmp2 = pop(in_stack);
+        if(tmp2==NULL)
+            break;
+        push(tmp2,rev_copy_stack);
+        push(tmp2,&tmp);
+    }
+    //transfer tmp back to input
+    while(!stack_transfer(&tmp,in_stack));
+    return;
+}
 
 //compute the angle at which the point is wrt to p0
 double get_angle(double x1, double y1, double p0x, double p0y){
@@ -465,4 +519,41 @@ void graham_scan(stack_item **sorted_stack, stack_item **hull_stack, stack_item 
     }
 
     return;
+}
+
+//2D cross-product
+double cp2d(item_ptr a, item_ptr b, item_ptr c){
+    //||BA x BC|| = (ax-bx)*(cy-by)-(ay-by)*(cx-bx)
+    return ((a->x - b->x) * (c->y - b->y) - (a->y - b->y) * (c->x - b->x));
+}
+
+//find convex hull sector
+bool is_in_hull(stack_item** hull,point_s test_point){
+    if(hull==NULL)
+        exit(1);
+    point_s p0 = *pop(hull);
+    //find the sector in which the point lies by
+    //doing the 2D "cross product" of p0pi x p0test
+    //which needs to be positive and by maximizing i
+    item_ptr previous = NULL, current = NULL;
+    while(true){
+        current = pop(hull);
+        if(current==NULL)
+            break;
+        //do the 2D cross product p0pi x p0test
+        if(cp2d(current,&p0,&test_point)< 0){
+            break;
+        }
+        previous = current;
+    }
+    if(current==NULL)
+        return false;
+
+    //Check if the point is within the portion of the sector that is inside the convex hull
+    //2D "cross product" of pipi+1 x piptest
+    //which needs to be positive
+    if(cp2d(current,previous,&test_point)>= 0)
+        return true;
+    else
+       return false;
 }
