@@ -1,4 +1,5 @@
 #!/bin/bash
+#dfrangopoulos
 
 gcc main.c -lm -DUNITTEST=true -o main
 
