@@ -6,7 +6,9 @@
 #include<math.h>
 
 #define MAX_LINE_BUFFER 150
-#define UNITTEST false
+#ifndef UNITTEST
+    #define UNITTEST false
+#endif
 
 //Point "Object"
 typedef struct point{
