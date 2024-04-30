@@ -1,9 +1,6 @@
 # Dependencies
  - gnuplot
 
-# Compilation
- - gcc main.c -lm -o main
-
 # Usage
  - ./main generate <output_file> <point_num>
  - ./main convex <point_file>
@@ -15,3 +12,6 @@
  - convex : draws the convex hull for those points with gnuplot
  - check : returns T/F if the point is inside or outside the hull
  - intersect : checks if 2 hulls intersect
+
+# Stress tests
+ - bash_test.sh can be used to detect crashes. "./bash_test.sh <path_to_test_build_binary>"
